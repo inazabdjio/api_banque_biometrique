@@ -8,5 +8,6 @@ passlib[bcrypt]
 pydantic
 pydantic-settings
 email-validator
-face_recognition
 numpy
+dlib-bin
+face_recognition
