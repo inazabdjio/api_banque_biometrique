@@ -17,8 +17,6 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     phone_number = Column(String)
     address = Column(String)
-    cni_path = Column(String)
-    face_encoding = Column(String) 
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relations
@@ -47,9 +45,9 @@ class License(Base):
     __tablename__ = "licenses"
     id = Column(Integer, primary_key=True, index=True)
     license_key = Column(String, unique=True)
-    # MODIFICATION : L'utilisateur est bloqué par défaut à l'inscription
+    # L'utilisateur est bloqué par défaut à l'inscription
     is_active = Column(Boolean, default=False) 
-    # MODIFICATION : Pas de date par défaut, l'admin la fixera à l'activation
+    # Pas de date par défaut, l'admin la fixera à l'activation
     expiry_date = Column(DateTime, nullable=True) 
     user_id = Column(Integer, ForeignKey("users.id"))
     

@@ -20,7 +20,7 @@ class AdminOut(BaseSchema):
 
 # --- VALIDATION ADMINISTRATIVE ---
 class LicenseValidation(BaseModel):
-    """Utilisé par l'admin pour fixer une date d'expiration précise"""
+    """Utilisé par l'admin pour fixer une date d'expiration précise lors de l'activation"""
     expiry_date: datetime
 
 # --- TRANSACTION ---
@@ -59,13 +59,13 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """
     Schéma utilisé lors de l'inscription. 
-    L'utilisateur choisit son type de compte ici.
+    L'utilisateur choisit son type de compte.
     """
     account_type: str = Field(default="COURANT", pattern="^(COURANT|EPARGNE)$")
 
 class UserOut(UserBase, BaseSchema):
     id: int
-    cni_path: Optional[str] = None
+    # MODIFICATION : cni_path a été supprimé ici
     created_at: datetime
     accounts: List[AccountOut] = []
     license: Optional[LicenseOut] = None

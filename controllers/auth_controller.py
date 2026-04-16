@@ -1,20 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from database import get_db
-from datetime import datetime # <--- IMPORTANT pour vérifier la date
+from datetime import datetime
 import models, schemas
-from services.services import FaceService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@router.post("/login-biometric")
+@router.post("/login") # On a renommé la route (plus de "-biometric")
 async def login(
-    email: str = Form(...), 
-    image: UploadFile = File(...), 
+    login_data: schemas.LoginRequest, # On utilise le schéma qu'on a créé
     db: Session = Depends(get_db)
 ):
-    # 1. Rechercher l'utilisateur
-    user = db.query(models.User).filter(models.User.email == email).first()
+    # 1. Rechercher l'utilisateur par email
+    user = db.query(models.User).filter(models.User.email == login_data.email).first()
     
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
@@ -30,24 +28,24 @@ async def login(
             detail="Accès refusé : Votre licence est inactive ou bloquée par l'administration."
         )
 
-    # VÉRIFICATION DE LA DATE D'EXPIRATION (L'ajout crucial)
+    # VÉRIFICATION DE LA DATE D'EXPIRATION
     if user.license.expiry_date and user.license.expiry_date < datetime.utcnow():
         raise HTTPException(
             status_code=403, 
             detail=f"Accès refusé : Votre licence a expiré le {user.license.expiry_date.strftime('%d/%m/%Y')}."
         )
     
-    # 3. Vérification biométrique
-    image.file.seek(0)
-    is_valid = FaceService.verify_face(user.face_encoding, image.file)
-    
-    if is_valid:
-        return {
-            "status": "success", 
-            "message": f"Accès autorisé. Bienvenue {user.full_name}",
-            "user_id": user.id,
-            # On renvoie la liste de tous ses comptes pour plus de clarté
-            "accounts": [acc.account_number for acc in user.accounts]
-        }
-    
-    raise HTTPException(status_code=401, detail="Échec de la reconnaissance par image")
+    # 3. Plus de vérification biométrique ! 
+    # L'accès est autorisé si l'email existe et que la licence est valide.
+    return {
+        "status": "success", 
+        "message": f"Accès autorisé. Bienvenue {user.full_name}",
+        "user_id": user.id,
+        "accounts": [
+            {
+                "number": acc.account_number, 
+                "type": acc.account_type, 
+                "balance": acc.balance
+            } for acc in user.accounts
+        ]
+    }

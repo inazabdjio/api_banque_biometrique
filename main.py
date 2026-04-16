@@ -2,20 +2,22 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import models
 from database import engine
-# AJOUT : On importe tous les contrôleurs nécessaires
+# Importation des contrôleurs
 from controllers import user_controller, transaction_controller, admin_controller, auth_controller
 
 # --- CRÉATION DES TABLES ---
+# SQLAlchemy va créer les tables dans Neon en suivant ton nouveau models.py (sans CNI)
 models.Base.metadata.create_all(bind=engine)
 
 # --- INITIALISATION DE L'API ---
 app = FastAPI(
-    title="Système de Banque Biométrique",
-    description="API de gestion bancaire",
-    version="1.0.0"
+    title="Système de Gestion Bancaire Numérique", # Titre mis à jour (plus de "Biométrique")
+    description="API de gestion bancaire simplifiée et sécurisée",
+    version="1.1.0"
 )
 
 # --- CONFIGURATION CORS ---
+# Permet à ton futur frontend (ou Postman/Swagger) de communiquer avec l'API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,17 +27,16 @@ app.add_middleware(
 )
 
 # --- INCLUSION DES ROUTEURS ---
-# AJOUT : On inclut les 4 routeurs pour que tout soit visible dans Swagger
+# Ces routeurs connectent tes fonctions logiques à des URLs précises
 app.include_router(user_controller.router)
-app.include_router(auth_controller.router)        # <--- IMPORTANT : Pour le login
+app.include_router(auth_controller.router)        
 app.include_router(transaction_controller.router)
-app.include_router(admin_controller.router)       # <--- IMPORTANT : Pour la gestion admin
-# ----------------------------
+app.include_router(admin_controller.router)       
 
 @app.get("/")
 def read_root():
     return {
-        "message": "Bienvenue sur l'API de la Banque Biométrique",
+        "message": "Bienvenue sur l'API de la Banque Numérique",
         "status": "Opérationnel",
         "documentation": "/docs"
     }

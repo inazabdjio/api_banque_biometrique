@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from typing import List # Ajout important pour le typage
+from typing import List
 import models, schemas
 from datetime import datetime
 
@@ -58,9 +58,16 @@ def withdraw_money(account_number: str, amount: float, db: Session = Depends(get
     db.refresh(account)
     return {"message": f"Retrait réussi. Nouveau solde : {account.balance} FCFA"}
 
-# --- 3. VIREMENT ---
+# --- 3. VIREMENT (Sécurisé) ---
 @router.post("/transfer")
 def transfer_money(data: schemas.TransactionCreate, db: Session = Depends(get_db)):
+    # AJOUT DE LA SÉCURITÉ : Vérifier si les comptes sont identiques
+    if data.sender_account == data.receiver_account:
+        raise HTTPException(
+            status_code=400, 
+            detail="Le compte émetteur et récepteur doivent être différents"
+        )
+
     sender = db.query(models.Account).filter(models.Account.account_number == data.sender_account).first()
     receiver = db.query(models.Account).filter(models.Account.account_number == data.receiver_account).first()
 
@@ -70,6 +77,7 @@ def transfer_money(data: schemas.TransactionCreate, db: Session = Depends(get_db
     if sender.balance < data.amount:
         raise HTTPException(status_code=400, detail="Solde insuffisant pour le virement")
 
+    # Opération atomique (simplifiée)
     sender.balance -= data.amount
     receiver.balance += data.amount
 
@@ -84,12 +92,11 @@ def transfer_money(data: schemas.TransactionCreate, db: Session = Depends(get_db
     db.commit()
     return {"message": "Virement effectué avec succès", "montant": data.amount}
 
-# --- 4. HISTORIQUE (Optimisé avec response_model) ---
+# --- 4. HISTORIQUE ---
 @router.get("/history/{account_number}", response_model=List[schemas.TransactionOut])
 def get_history(account_number: str, db: Session = Depends(get_db)):
-    """Récupère l'historique complet (Envois et Réceptions) pour un compte donné"""
     history = db.query(models.Transaction).filter(
         (models.Transaction.sender_account == account_number) | 
         (models.Transaction.receiver_account == account_number)
-    ).order_by(models.Transaction.timestamp.desc()).all() # Trié du plus récent au plus ancien
+    ).order_by(models.Transaction.timestamp.desc()).all()
     return history

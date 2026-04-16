@@ -16,7 +16,7 @@ def create_admin(admin: schemas.AdminCreate, db: Session = Depends(get_db)):
     
     new_admin = models.Admin(
         username=admin.username,
-        password_hash=admin.password,
+        password_hash=admin.password, # Note: Dans un vrai projet, on hacherait ce MDP
         role=admin.role
     )
     db.add(new_admin)
@@ -24,18 +24,23 @@ def create_admin(admin: schemas.AdminCreate, db: Session = Depends(get_db)):
     db.refresh(new_admin)
     return new_admin
 
-# --- 2. VOIR LES UTILISATEURS ET LEURS CNI ---
+# --- 2. VOIR TOUS LES ADMINS (Nouvelle fonctionnalité) ---
+@router.get("/all", response_model=List[schemas.AdminOut])
+def get_all_admins(db: Session = Depends(get_db)):
+    """Récupère la liste de tous les administrateurs du système"""
+    return db.query(models.Admin).all()
+
+# --- 3. VOIR TOUS LES UTILISATEURS ---
 @router.get("/users-report", response_model=List[schemas.UserOut])
 def get_all_users(db: Session = Depends(get_db)):
-    """L'admin consulte la liste pour vérifier les pièces d'identité (cni_path)"""
+    """L'admin consulte la liste des clients inscrits (version numérique)"""
     return db.query(models.User).all()
 
-# --- 3. VALIDER AVEC UNE DATE PRÉCISE ---
+# --- 4. VALIDER AVEC UNE DATE PRÉCISE ---
 @router.put("/validate-user/{user_id}")
 def validate_user_license(user_id: int, data: schemas.LicenseValidation, db: Session = Depends(get_db)):
     """
     Active le compte et définit la date d'expiration exacte choisie par l'admin.
-    Format attendu dans JSON : "2027-12-31T23:59:59"
     """
     user_license = db.query(models.License).filter(models.License.user_id == user_id).first()
     
@@ -52,7 +57,7 @@ def validate_user_license(user_id: int, data: schemas.LicenseValidation, db: Ses
         "expire_le": user_license.expiry_date
     }
 
-# --- 4. BLOQUER / DÉBLOQUER RAPIDEMENT ---
+# --- 5. BLOQUER / DÉBLOQUER RAPIDEMENT ---
 @router.put("/license-status/{user_id}")
 def update_license_status(user_id: int, is_active: bool, db: Session = Depends(get_db)):
     user_license = db.query(models.License).filter(models.License.user_id == user_id).first()
