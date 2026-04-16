@@ -9,5 +9,4 @@ pydantic
 pydantic-settings
 email-validator
 numpy
-dlib-bin
 face-recognition
