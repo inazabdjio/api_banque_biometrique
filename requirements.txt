@@ -10,4 +10,4 @@ pydantic-settings
 email-validator
 numpy
 dlib-bin
-face_recognition
+face-recognition
