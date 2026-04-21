@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from typing import List
 from datetime import datetime
@@ -13,14 +13,12 @@ def deposit_money(account_number: str, amount: float, db: Session = Depends(get_
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Le montant doit être positif")
     
-    # On récupère le compte cible
     account = db.query(models.Account).filter(models.Account.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Compte introuvable")
 
     try:
         account.balance += amount
-        # Utilisation de sender_id=None pour un dépôt externe (cash)
         new_tx = models.Transaction(
             receiver_id=account.id, 
             amount=amount,
@@ -46,7 +44,6 @@ def withdraw_money(account_number: str, amount: float, db: Session = Depends(get
 
     try:
         account.balance -= amount
-        # Utilisation de receiver_id=None pour un retrait externe (cash)
         new_tx = models.Transaction(
             sender_id=account.id,
             amount=amount,
@@ -78,7 +75,6 @@ def transfer_money(data: schemas.TransactionCreate, db: Session = Depends(get_db
         sender.balance -= data.amount
         receiver.balance += data.amount
         
-        # Utilisation des IDs de comptes pour la relation SQL
         new_tx = models.Transaction(
             sender_id=sender.id,
             receiver_id=receiver.id,
@@ -98,8 +94,13 @@ def get_history(account_number: str, db: Session = Depends(get_db)):
     account = db.query(models.Account).filter(models.Account.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Compte introuvable")
-        
-    return db.query(models.Transaction).filter(
+    
+    # Correction : Utilisation de joinedload pour charger les relations sender/receiver
+    # Cela permet à Pydantic d'avoir les données nécessaires pour le schéma TransactionOut
+    return db.query(models.Transaction).options(
+        joinedload(models.Transaction.sender_account),
+        joinedload(models.Transaction.receiver_account)
+    ).filter(
         (models.Transaction.sender_id == account.id) | 
         (models.Transaction.receiver_id == account.id)
     ).order_by(models.Transaction.timestamp.desc()).all()

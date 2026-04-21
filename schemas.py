@@ -4,7 +4,6 @@ from datetime import datetime
 
 # --- CONFIGURATION DE BASE ---
 class BaseSchema(BaseModel):
-    """Active la compatibilité avec les objets SQLAlchemy (ORM)"""
     model_config = ConfigDict(from_attributes=True)
 
 # --- ADMIN ---
@@ -32,12 +31,17 @@ class TransactionCreate(BaseModel):
     receiver_account: str
     amount: float = Field(gt=0) 
 
+# Nouveau schéma pour éviter l'erreur de validation
+class AccountRefOut(BaseSchema):
+    account_number: str
+
 class TransactionOut(BaseSchema):
     id: int
-    sender_account: str
-    receiver_account: str
     amount: float
     timestamp: datetime
+    # On utilise Optional car le dépôt/retrait peut avoir sender/receiver à None
+    sender: Optional[AccountRefOut] = None
+    receiver: Optional[AccountRefOut] = None
 
 # --- ACCOUNT ---
 class AccountCreate(BaseModel):
@@ -63,7 +67,6 @@ class UserBase(BaseModel):
     phone_number: str
     address: str
 
-# Ajout du champ password ici pour permettre l'inscription
 class UserCreate(UserBase):
     password: str
     account_type: str = Field(default="COURANT", pattern="^(COURANT|EPARGNE)$")
@@ -72,6 +75,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
     address: Optional[str] = None
+    password: Optional[str] = None # Ajouté pour permettre la modif du mot de passe
 
 class UserOut(UserBase, BaseSchema):
     id: int

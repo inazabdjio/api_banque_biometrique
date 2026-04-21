@@ -19,9 +19,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     phone_number = Column(String)
     address = Column(String)
-    # AJOUT ESSENTIEL : Stockage du mot de passe haché
     password_hash = Column(String, nullable=False) 
-    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -35,7 +33,6 @@ class Account(Base):
     account_type = Column(String, default="COURANT") 
     balance = Column(Float, default=0.0)
     user_id = Column(Integer, ForeignKey("users.id"))
-    
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     owner = relationship("User", back_populates="accounts")
@@ -45,10 +42,8 @@ class Account(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, index=True)
-    
     sender_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     receiver_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
-    
     amount = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     
@@ -62,5 +57,4 @@ class License(Base):
     is_active = Column(Boolean, default=False) 
     expiry_date = Column(DateTime, nullable=True) 
     user_id = Column(Integer, ForeignKey("users.id"))
-    
     owner = relationship("User", back_populates="license")
