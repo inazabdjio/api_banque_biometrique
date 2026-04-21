@@ -1,51 +1,54 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from passlib.context import CryptContext
 from database import get_db
 from datetime import datetime
 import models, schemas
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+# Configuration du contexte pour vérifier les mots de passe hachés
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@router.post("/login") # On a renommé la route (plus de "-biometric")
-async def login(
-    login_data: schemas.LoginRequest, # On utilise le schéma qu'on a créé
-    db: Session = Depends(get_db)
-):
+router = APIRouter(prefix="/auth", tags=["Authentification"])
+
+@router.post("/login")
+async def login(login_data: schemas.LoginRequest, db: Session = Depends(get_db)):
     # 1. Rechercher l'utilisateur par email
     user = db.query(models.User).filter(models.User.email == login_data.email).first()
     
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    
-    # 2. Vérification de la Licence (État + Date)
-    if not user.license:
-        raise HTTPException(status_code=403, detail="Licence introuvable.")
-
-    # Vérification si l'admin a activé le compte
-    if not user.license.is_active:
+    # 2. Sécurité : Vérification de l'utilisateur ET du mot de passe haché
+    # On utilise pwd_context.verify() pour comparer le mot de passe reçu avec le hash stocké
+    if not user or not pwd_context.verify(login_data.password, user.password_hash):
         raise HTTPException(
-            status_code=403, 
-            detail="Accès refusé : Votre licence est inactive ou bloquée par l'administration."
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Email ou mot de passe incorrect"
+        )
+    
+    # 3. Vérification de la Licence
+    if not user.license or not user.license.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Accès refusé : Licence inactive ou inexistante."
         )
 
-    # VÉRIFICATION DE LA DATE D'EXPIRATION
+    # 4. Vérification de la date d'expiration
     if user.license.expiry_date and user.license.expiry_date < datetime.utcnow():
         raise HTTPException(
-            status_code=403, 
+            status_code=status.HTTP_403_FORBIDDEN, 
             detail=f"Accès refusé : Votre licence a expiré le {user.license.expiry_date.strftime('%d/%m/%Y')}."
         )
     
-    # 3. Plus de vérification biométrique ! 
-    # L'accès est autorisé si l'email existe et que la licence est valide.
+    # 5. Retour des informations utilisateur
     return {
         "status": "success", 
-        "message": f"Accès autorisé. Bienvenue {user.full_name}",
         "user_id": user.id,
+        "full_name": user.full_name,
         "accounts": [
             {
-                "number": acc.account_number, 
-                "type": acc.account_type, 
+                "id": acc.id,
+                "account_number": acc.account_number, 
+                "account_type": acc.account_type, 
                 "balance": acc.balance
-            } for acc in user.accounts
+            } 
+            for acc in user.accounts
         ]
     }

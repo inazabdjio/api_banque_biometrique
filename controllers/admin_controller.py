@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from typing import List
@@ -7,16 +7,18 @@ import models, schemas
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
-# --- 1. CRÉER UN ADMIN ---
+# --- 1. GESTION DES ADMINS ---
+
 @router.post("/create", response_model=schemas.AdminOut)
 def create_admin(admin: schemas.AdminCreate, db: Session = Depends(get_db)):
     db_admin = db.query(models.Admin).filter(models.Admin.username == admin.username).first()
     if db_admin:
         raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
     
+    # Stockage du mot de passe (Note: en production, il faudrait le hasher avec bcrypt)
     new_admin = models.Admin(
         username=admin.username,
-        password_hash=admin.password, # Note: Dans un vrai projet, on hacherait ce MDP
+        password_hash=admin.password, 
         role=admin.role
     )
     db.add(new_admin)
@@ -24,49 +26,73 @@ def create_admin(admin: schemas.AdminCreate, db: Session = Depends(get_db)):
     db.refresh(new_admin)
     return new_admin
 
-# --- 2. VOIR TOUS LES ADMINS (Nouvelle fonctionnalité) ---
 @router.get("/all", response_model=List[schemas.AdminOut])
 def get_all_admins(db: Session = Depends(get_db)):
-    """Récupère la liste de tous les administrateurs du système"""
     return db.query(models.Admin).all()
 
-# --- 3. VOIR TOUS LES UTILISATEURS ---
-@router.get("/users-report", response_model=List[schemas.UserOut])
+@router.get("/{admin_id}", response_model=schemas.AdminOut)
+def read_admin(admin_id: int, db: Session = Depends(get_db)):
+    db_admin = db.query(models.Admin).filter(models.Admin.id == admin_id).first()
+    if not db_admin:
+        raise HTTPException(status_code=404, detail="Administrateur non trouvé")
+    return db_admin
+
+@router.put("/{admin_id}", response_model=schemas.AdminOut)
+def update_admin(admin_id: int, admin_update: schemas.AdminUpdate, db: Session = Depends(get_db)):
+    db_admin = db.query(models.Admin).filter(models.Admin.id == admin_id).first()
+    if not db_admin:
+        raise HTTPException(status_code=404, detail="Administrateur non trouvé")
+    
+    # Mise à jour dynamique
+    update_data = admin_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_admin, key, value)
+        
+    db.commit()
+    db.refresh(db_admin)
+    return db_admin
+
+@router.delete("/{admin_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_admin(admin_id: int, db: Session = Depends(get_db)):
+    db_admin = db.query(models.Admin).filter(models.Admin.id == admin_id).first()
+    if not db_admin:
+        raise HTTPException(status_code=404, detail="Administrateur non trouvé")
+    db.delete(db_admin)
+    db.commit()
+    return None
+
+# --- 2. GESTION DES UTILISATEURS PAR L'ADMIN ---
+
+@router.get("/users-report", response_model=List[schemas.UserOut]) # Utilisation de UserOut
 def get_all_users(db: Session = Depends(get_db)):
-    """L'admin consulte la liste des clients inscrits (version numérique)"""
     return db.query(models.User).all()
 
-# --- 4. VALIDER AVEC UNE DATE PRÉCISE ---
+@router.delete("/delete-user/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    db.delete(db_user)
+    db.commit()
+    return None
+
+# --- 3. GESTION DES LICENCES ---
+
 @router.put("/validate-user/{user_id}")
 def validate_user_license(user_id: int, data: schemas.LicenseValidation, db: Session = Depends(get_db)):
-    """
-    Active le compte et définit la date d'expiration exacte choisie par l'admin.
-    """
     user_license = db.query(models.License).filter(models.License.user_id == user_id).first()
-    
     if not user_license:
         raise HTTPException(status_code=404, detail="Licence introuvable")
-
     user_license.is_active = True
     user_license.expiry_date = data.expiry_date
-    
     db.commit()
-    return {
-        "message": "Utilisateur validé avec succès",
-        "nouveau_statut": "Actif",
-        "expire_le": user_license.expiry_date
-    }
+    return {"message": "Utilisateur validé", "expire_le": user_license.expiry_date}
 
-# --- 5. BLOQUER / DÉBLOQUER RAPIDEMENT ---
 @router.put("/license-status/{user_id}")
 def update_license_status(user_id: int, is_active: bool, db: Session = Depends(get_db)):
     user_license = db.query(models.License).filter(models.License.user_id == user_id).first()
-    
     if not user_license:
         raise HTTPException(status_code=404, detail="Licence non trouvée")
-    
     user_license.is_active = is_active
     db.commit()
-    
-    statut = "activée" if is_active else "bloquée"
-    return {"message": f"La licence de l'utilisateur {user_id} a été {statut}."}
+    return {"message": f"Licence {'activée' if is_active else 'bloquée'}."}

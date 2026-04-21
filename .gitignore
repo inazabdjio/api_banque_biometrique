@@ -1,2 +1,23 @@
+# Environnement virtuel
 venv/
+env/
+.env
+
+# Cache Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Fichiers de base de données locale (si tu en utilises)
+*.db
+*.sqlite3
+
+# Dossiers d'IDE et de configuration
+.vscode/
+.idea/
+.DS_Store
+
+# Fichiers de build ou de déploiement temporaires
+dist/
+build/
+*.egg-info/

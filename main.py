@@ -1,10 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse  # <--- Ajout de l'import pour la redirection
+from fastapi.responses import RedirectResponse
 import models
 from database import engine
-# Importation des contrôleurs
-from controllers import user_controller, transaction_controller, admin_controller, auth_controller
+
+# Importation des contrôleurs avec la parenthèse fermante ajoutée
+from controllers import (
+    user_controller, 
+    transaction_controller, 
+    admin_controller, 
+    auth_controller,
+    account_controller  
+)
 
 # --- CRÉATION DES TABLES ---
 models.Base.metadata.create_all(bind=engine)
@@ -26,13 +33,14 @@ app.add_middleware(
 )
 
 # --- INCLUSION DES ROUTEURS ---
+app.include_router(auth_controller.router)
 app.include_router(user_controller.router)
-app.include_router(auth_controller.router)        
+app.include_router(admin_controller.router)
+app.include_router(account_controller.router)      
 app.include_router(transaction_controller.router)
-app.include_router(admin_controller.router)       
 
 # --- ROUTE RACINE (REDIRECTION) ---
-@app.get("/")
+@app.get("/", tags=["Root"])
 async def root():
     """
     Redirige automatiquement les visiteurs vers la documentation interactive.

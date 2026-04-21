@@ -1,80 +1,85 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import uuid, secrets
+from passlib.context import CryptContext
 from database import get_db
 import models, schemas
-from typing import List
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-# --- 1. INSCRIPTION (Version allégée sans images) ---
-@router.post("/register", response_model=schemas.UserOut)
-async def register(
-    user_data: schemas.UserCreate, # On utilise maintenant le schéma JSON
-    db: Session = Depends(get_db)
-):
-    # Vérification si l'email existe déjà
-    existing_user = db.query(models.User).filter(models.User.email == user_data.email).first()
+# Configuration du hachage de mot de passe
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# --- CREATE: Créer un utilisateur ---
+@router.post("/create", response_model=schemas.UserOut, status_code=status.HTTP_201_CREATED)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """Crée un nouvel utilisateur avec un mot de passe haché."""
+    # 1. Vérifier si l'email existe déjà
+    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Un utilisateur avec cet email existe déjà")
-
-    # Création de l'utilisateur (uniquement avec les champs textuels)
-    new_user = models.User(
-        full_name=user_data.full_name, 
-        email=user_data.email, 
-        phone_number=user_data.phone_number, 
-        address=user_data.address
-    )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Cet email est déjà utilisé"
+        )
+    
+    # 2. Hacher le mot de passe
+    hashed_password = pwd_context.hash(user.password)
+    
+    # 3. Préparer les données
+    user_data = user.model_dump()
+    user_data.pop("password") # On retire le mot de passe en clair
+    user_data["password_hash"] = hashed_password
+    
+    # 4. Créer l'utilisateur dans la base
+    new_user = models.User(**user_data)
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    # Création automatique du premier compte (selon le choix de l'utilisateur)
-    new_acc = models.Account(
-        account_number=uuid.uuid4().hex[:10].upper(), 
-        user_id=new_user.id,
-        account_type=user_data.account_type, 
-        balance=0.0
-    )
-    
-    # Création de la licence (Inactive par défaut jusqu'à validation admin)
-    new_lic = models.License(
-        license_key=secrets.token_urlsafe(16), 
-        is_active=False,
-        expiry_date=None,
-        user_id=new_user.id
-    )
-    
-    db.add(new_acc)
-    db.add(new_lic)
     db.commit()
     db.refresh(new_user)
     
     return new_user
 
-# --- 2. AJOUTER UN COMPTE SUPPLÉMENTAIRE ---
-@router.post("/add-account/{user_id}", response_model=schemas.AccountOut)
-def add_new_account(user_id: int, account_type: str = "EPARGNE", db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+# --- READ: Lire un utilisateur par son ID ---
+@router.get("/{user_id}", response_model=schemas.UserOut)
+def read_user(user_id: int, db: Session = Depends(get_db)):
+    """Récupère les informations d'un utilisateur spécifique."""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Utilisateur non trouvé"
+        )
+    return db_user
 
-    new_acc = models.Account(
-        account_number=uuid.uuid4().hex[:10].upper(),
-        user_id=user.id,
-        account_type=account_type,
-        balance=0.0
-    )
+# --- UPDATE: Mettre à jour les infos d'un utilisateur ---
+@router.put("/{user_id}", response_model=schemas.UserOut)
+def update_user(user_id: int, user_update: schemas.UserUpdate, db: Session = Depends(get_db)):
+    """Met à jour partiellement les informations d'un utilisateur."""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Utilisateur non trouvé"
+        )
     
-    db.add(new_acc)
+    # Mise à jour dynamique des champs
+    update_data = user_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_user, key, value)
+    
     db.commit()
-    db.refresh(new_acc)
-    return new_acc
+    db.refresh(db_user)
+    return db_user
 
-# --- 3. CONSULTER LE PROFIL ---
-@router.get("/me/{user_id}", response_model=schemas.UserOut)
-def get_user_profile(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    return user
+# --- DELETE: Supprimer un utilisateur ---
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    """Supprime un utilisateur de la base de données."""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Utilisateur non trouvé"
+        )
+    
+    db.delete(db_user)
+    db.commit()
+    return None

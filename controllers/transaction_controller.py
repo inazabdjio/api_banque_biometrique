@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from typing import List
-import models, schemas
 from datetime import datetime
+import models, schemas
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -11,92 +11,95 @@ router = APIRouter(prefix="/transactions", tags=["Transactions"])
 @router.post("/deposit")
 def deposit_money(account_number: str, amount: float, db: Session = Depends(get_db)):
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="Le montant doit être supérieur à 0")
+        raise HTTPException(status_code=400, detail="Le montant doit être positif")
     
+    # On récupère le compte cible
     account = db.query(models.Account).filter(models.Account.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Compte introuvable")
 
-    account.balance += amount
-
-    new_tx = models.Transaction(
-        sender_account="DEPOT_CASH",
-        receiver_account=account_number,
-        amount=amount,
-        timestamp=datetime.utcnow()
-    )
-    
-    db.add(new_tx)
-    db.commit()
-    db.refresh(account)
-    return {"message": f"Dépôt réussi. Nouveau solde : {account.balance} FCFA"}
+    try:
+        account.balance += amount
+        # Utilisation de sender_id=None pour un dépôt externe (cash)
+        new_tx = models.Transaction(
+            receiver_id=account.id, 
+            amount=amount,
+            timestamp=datetime.utcnow()
+        )
+        db.add(new_tx)
+        db.commit()
+        db.refresh(account)
+        return {"message": f"Dépôt réussi. Nouveau solde : {account.balance} FCFA"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erreur lors du dépôt")
 
 # --- 2. RETRAIT ---
 @router.post("/withdraw")
 def withdraw_money(account_number: str, amount: float, db: Session = Depends(get_db)):
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Le montant doit être supérieur à 0")
-
     account = db.query(models.Account).filter(models.Account.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Compte introuvable")
-
+    
     if account.balance < amount:
-        raise HTTPException(status_code=400, detail="Solde insuffisant pour ce retrait")
+        raise HTTPException(status_code=400, detail="Solde insuffisant")
 
-    account.balance -= amount
+    try:
+        account.balance -= amount
+        # Utilisation de receiver_id=None pour un retrait externe (cash)
+        new_tx = models.Transaction(
+            sender_id=account.id,
+            amount=amount,
+            timestamp=datetime.utcnow()
+        )
+        db.add(new_tx)
+        db.commit()
+        return {"message": "Retrait réussi"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erreur lors du retrait")
 
-    new_tx = models.Transaction(
-        sender_account=account_number,
-        receiver_account="RETRAIT_CASH",
-        amount=amount,
-        timestamp=datetime.utcnow()
-    )
-
-    db.add(new_tx)
-    db.commit()
-    db.refresh(account)
-    return {"message": f"Retrait réussi. Nouveau solde : {account.balance} FCFA"}
-
-# --- 3. VIREMENT (Sécurisé) ---
+# --- 3. VIREMENT ---
 @router.post("/transfer")
 def transfer_money(data: schemas.TransactionCreate, db: Session = Depends(get_db)):
-    # AJOUT DE LA SÉCURITÉ : Vérifier si les comptes sont identiques
     if data.sender_account == data.receiver_account:
-        raise HTTPException(
-            status_code=400, 
-            detail="Le compte émetteur et récepteur doivent être différents"
-        )
+        raise HTTPException(status_code=400, detail="Comptes identiques")
 
     sender = db.query(models.Account).filter(models.Account.account_number == data.sender_account).first()
     receiver = db.query(models.Account).filter(models.Account.account_number == data.receiver_account).first()
 
     if not sender or not receiver:
-        raise HTTPException(status_code=404, detail="L'un des comptes est introuvable")
+        raise HTTPException(status_code=404, detail="L'un des comptes n'existe pas")
 
     if sender.balance < data.amount:
-        raise HTTPException(status_code=400, detail="Solde insuffisant pour le virement")
+        raise HTTPException(status_code=400, detail="Solde insuffisant")
 
-    # Opération atomique (simplifiée)
-    sender.balance -= data.amount
-    receiver.balance += data.amount
-
-    new_tx = models.Transaction(
-        sender_account=data.sender_account,
-        receiver_account=data.receiver_account,
-        amount=data.amount,
-        timestamp=datetime.utcnow()
-    )
-
-    db.add(new_tx)
-    db.commit()
-    return {"message": "Virement effectué avec succès", "montant": data.amount}
+    try:
+        sender.balance -= data.amount
+        receiver.balance += data.amount
+        
+        # Utilisation des IDs de comptes pour la relation SQL
+        new_tx = models.Transaction(
+            sender_id=sender.id,
+            receiver_id=receiver.id,
+            amount=data.amount,
+            timestamp=datetime.utcnow()
+        )
+        db.add(new_tx)
+        db.commit()
+        return {"message": "Virement effectué avec succès"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Échec de la transaction")
 
 # --- 4. HISTORIQUE ---
 @router.get("/history/{account_number}", response_model=List[schemas.TransactionOut])
 def get_history(account_number: str, db: Session = Depends(get_db)):
-    history = db.query(models.Transaction).filter(
-        (models.Transaction.sender_account == account_number) | 
-        (models.Transaction.receiver_account == account_number)
+    account = db.query(models.Account).filter(models.Account.account_number == account_number).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+        
+    return db.query(models.Transaction).filter(
+        (models.Transaction.sender_id == account.id) | 
+        (models.Transaction.receiver_id == account.id)
     ).order_by(models.Transaction.timestamp.desc()).all()
-    return history
