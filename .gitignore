@@ -21,3 +21,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+.pytest_cache/
+rapport_test.html
