@@ -15,4 +15,4 @@
 Pour exécuter la suite de tests unitaires et d'intégration :
 Taper dans le terminal:
 
-DATABASE_URL="postgresql://user:password@localhost:5432/ta_base_donnees_test" pytest tests/test_banking.py -v --html=rapport_test.html
+DATABASE_URL="postgresql://user:ton_mon_passe@localhost:5432/ta_base_donnees_test" pytest tests/test_banking.py -v --html=rapport_test.html
