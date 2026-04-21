@@ -1,14 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+import bcrypt  # Importation directe de bcrypt
 from database import get_db
 import models, schemas
-import uuid # Ajouté pour générer le numéro de compte
+import uuid 
 
 router = APIRouter(prefix="/users", tags=["Users"])
-
-# Configuration du hachage de mot de passe
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- CREATE: Créer un utilisateur ---
 @router.post("/create", response_model=schemas.UserOut, status_code=status.HTTP_201_CREATED)
@@ -22,14 +19,16 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="Cet email est déjà utilisé"
         )
     
-    # 2. Hacher le mot de passe
-    hashed_password = pwd_context.hash(user.password)
+    # 2. Hacher le mot de passe avec bcrypt nativement
+    # On encode le mot de passe en bytes, on génère un sel, et on hache
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(user.password.encode('utf-8'), salt).decode('utf-8')
     
     # 3. Préparer les données
     user_data = user.model_dump()
     user_data.pop("password") # On retire le mot de passe en clair
     
-    # Extraction et retrait du champ account_type pour éviter l'erreur TypeError
+    # Extraction et retrait du champ account_type
     account_type = user_data.pop("account_type", "COURANT")
     
     user_data["password_hash"] = hashed_password
@@ -42,17 +41,17 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
     # 5. Création automatique du compte associé
     new_account = models.Account(
-        account_number=uuid.uuid4().hex[:10].upper(), # Génération automatique
+        account_number=uuid.uuid4().hex[:10].upper(),
         account_type=account_type,
         balance=0.0,
         user_id=new_user.id
     )
     db.add(new_account)
     
-    # 6. Création automatique d'une licence par défaut (nécessaire pour CT-003)
+    # 6. Création automatique d'une licence par défaut
     new_license = models.License(
         license_key=uuid.uuid4().hex[:16],
-        is_active=False, # Il faudra passer par l'admin pour l'activer (CT-002)
+        is_active=False,
         user_id=new_user.id
     )
     db.add(new_license)
