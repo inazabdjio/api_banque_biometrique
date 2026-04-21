@@ -94,12 +94,12 @@ def get_history(account_number: str, db: Session = Depends(get_db)):
     account = db.query(models.Account).filter(models.Account.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Compte introuvable")
-    
-    # Correction : Utilisation de joinedload pour charger les relations sender/receiver
-    # Cela permet à Pydantic d'avoir les données nécessaires pour le schéma TransactionOut
+        
+    # CORRECTION : Utilisation des noms de relations 'sender' et 'receiver'
+    # tels qu'ils sont définis dans models.py
     return db.query(models.Transaction).options(
-        joinedload(models.Transaction.sender_account),
-        joinedload(models.Transaction.receiver_account)
+        joinedload(models.Transaction.sender),
+        joinedload(models.Transaction.receiver)
     ).filter(
         (models.Transaction.sender_id == account.id) | 
         (models.Transaction.receiver_id == account.id)
