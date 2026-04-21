@@ -82,7 +82,15 @@ def update_user(user_id: int, user_update: schemas.UserUpdate, db: Session = Dep
             detail="Utilisateur non trouvé"
         )
     
+    # 1. Convertir les données en dictionnaire
     update_data = user_update.model_dump(exclude_unset=True)
+    
+    # 2. Sécurité : Empêcher explicitement la modification du mot de passe
+    # On retire le mot de passe s'il est présent dans la requête
+    update_data.pop("password", None)
+    update_data.pop("password_hash", None)
+    
+    # 3. Appliquer les changements sur les champs autorisés
     for key, value in update_data.items():
         setattr(db_user, key, value)
     

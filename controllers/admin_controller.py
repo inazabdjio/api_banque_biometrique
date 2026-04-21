@@ -4,10 +4,22 @@ from database import get_db
 from typing import List
 from datetime import datetime
 import models, schemas
+import bcrypt # Ajouté pour la sécurité
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
-# --- 1. GESTION DES ADMINS ---
+# --- 1. ROUTES FIXES (Doivent être placées avant les routes dynamiques) ---
+
+@router.get("/users-report", response_model=List[schemas.UserOut])
+def get_all_users(db: Session = Depends(get_db)):
+    """Récupère la liste de tous les utilisateurs."""
+    return db.query(models.User).all()
+
+@router.get("/all", response_model=List[schemas.AdminOut])
+def get_all_admins(db: Session = Depends(get_db)):
+    return db.query(models.Admin).all()
+
+# --- 2. ROUTES DYNAMIQUES (Avec {admin_id} ou {user_id}) ---
 
 @router.post("/create", response_model=schemas.AdminOut)
 def create_admin(admin: schemas.AdminCreate, db: Session = Depends(get_db)):
@@ -15,20 +27,19 @@ def create_admin(admin: schemas.AdminCreate, db: Session = Depends(get_db)):
     if db_admin:
         raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
     
-    # Stockage du mot de passe (Note: en production, il faudrait le hasher avec bcrypt)
+    # Correction sécurité : Hachage du mot de passe
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(admin.password.encode('utf-8'), salt).decode('utf-8')
+    
     new_admin = models.Admin(
         username=admin.username,
-        password_hash=admin.password, 
+        password_hash=hashed, 
         role=admin.role
     )
     db.add(new_admin)
     db.commit()
     db.refresh(new_admin)
     return new_admin
-
-@router.get("/all", response_model=List[schemas.AdminOut])
-def get_all_admins(db: Session = Depends(get_db)):
-    return db.query(models.Admin).all()
 
 @router.get("/{admin_id}", response_model=schemas.AdminOut)
 def read_admin(admin_id: int, db: Session = Depends(get_db)):
@@ -43,7 +54,6 @@ def update_admin(admin_id: int, admin_update: schemas.AdminUpdate, db: Session =
     if not db_admin:
         raise HTTPException(status_code=404, detail="Administrateur non trouvé")
     
-    # Mise à jour dynamique
     update_data = admin_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_admin, key, value)
@@ -60,12 +70,6 @@ def delete_admin(admin_id: int, db: Session = Depends(get_db)):
     db.delete(db_admin)
     db.commit()
     return None
-
-# --- 2. GESTION DES UTILISATEURS PAR L'ADMIN ---
-
-@router.get("/users-report", response_model=List[schemas.UserOut]) # Utilisation de UserOut
-def get_all_users(db: Session = Depends(get_db)):
-    return db.query(models.User).all()
 
 @router.delete("/delete-user/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def admin_delete_user(user_id: int, db: Session = Depends(get_db)):
